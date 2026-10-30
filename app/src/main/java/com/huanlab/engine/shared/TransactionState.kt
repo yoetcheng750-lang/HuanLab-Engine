@@ -1,0 +1,16 @@
+package com.huanlab.engine.shared
+
+enum class TransactionState {
+    PENDING,
+    EXECUTING,
+    PENDING_EFFECT,
+    APPLIED,
+    FAILED,
+    INEFFECTIVE,
+    INSUFFICIENT_DATA,
+    EFFECT_UNVERIFIED,
+    PENDING_ROLLBACK,
+    ROLLED_BACK,
+    ROLLBACK_UNKNOWN,
+    ROLLBACK_SKIPPED_CONFLICT,
+}
