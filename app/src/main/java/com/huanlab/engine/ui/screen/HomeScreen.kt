@@ -214,7 +214,12 @@ private fun ShizukuCard(phase: ShizukuPhase, detail: String) {
 private fun StatusTiles(state: UiState) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         YoeStatusTile("热状态", thermalText(state.thermal), thermalColorOf(state.thermal), Modifier.weight(1f))
-        YoeStatusTile("CPU", state.cpu.cpuPercentText(), MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+        YoeStatusTile(
+            "CPU",
+            state.cpuUsage?.valuePercent?.let { "%.0f%%".format(it) } ?: state.cpu.cpuPercentText(),
+            MaterialTheme.colorScheme.primary,
+            Modifier.weight(1f),
+        )
         YoeStatusTile("内存", state.memory.memPercentText(), MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
     }
 }

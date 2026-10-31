@@ -42,6 +42,7 @@ fun OverlayContent(
 ) {
     HuanLabTheme(dynamicColor = false) {
         val cpu: Metric<Float> = state.snapshot?.cpuPercent ?: Metric.Unknown("待采样")
+        val cpuUsagePercent = state.cpuUsage?.valuePercent
         val memory: Metric<MemorySnapshot> = state.snapshot?.memory ?: Metric.Unknown("待采样")
         val thermal: Metric<ThermalLevel> = state.snapshot?.thermal ?: Metric.Unknown("待采样")
         val actualHz: Metric<Float> = state.snapshot?.refreshRate?.actualHz ?: Metric.Unknown("待采样")
@@ -78,7 +79,7 @@ fun OverlayContent(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "CPU ${cpu.cpuPercentText()}",
+                    "CPU " + (cpuUsagePercent?.let { "%.0f%%".format(it) } ?: cpu.cpuPercentText()),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )

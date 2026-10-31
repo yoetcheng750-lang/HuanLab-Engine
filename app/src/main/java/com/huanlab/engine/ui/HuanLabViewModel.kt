@@ -12,6 +12,7 @@ import com.huanlab.engine.service.DeviceSnapshot
 import com.huanlab.engine.service.EngineProvider
 import com.huanlab.engine.service.Metric
 import com.huanlab.engine.service.metrics.CpuFrequencySnapshot
+import com.huanlab.engine.service.metrics.CpuUsageMetric
 import com.huanlab.engine.service.metrics.ThermalSnapshot
 import com.huanlab.engine.service.sampling.SamplingCoordinator
 import com.huanlab.engine.service.sampling.SamplingCoordinatorProvider
@@ -29,6 +30,7 @@ data class UiState(
     val snapshot: DeviceSnapshot? = null,
     val foreground: Metric<String> = Metric.Unknown("尚未采样"),
     val cpuFrequency: CpuFrequencySnapshot? = null,
+    val cpuUsage: CpuUsageMetric? = null,
     val thermalSensors: ThermalSnapshot? = null,
     val performanceEnabled: Boolean = false,
     val refreshRateTarget: Float = 120f,
@@ -60,6 +62,7 @@ class HuanLabViewModel(application: Application) : AndroidViewModel(application)
                     snapshot = samplingState.snapshot,
                     foreground = samplingState.foreground,
                     cpuFrequency = samplingState.cpuFrequency,
+                    cpuUsage = samplingState.cpuUsage,
                     thermalSensors = samplingState.thermalSensors,
                 )
             }

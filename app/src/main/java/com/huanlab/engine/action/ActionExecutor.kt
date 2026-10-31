@@ -36,7 +36,7 @@ class ActionExecutionException(message: String, cause: Throwable? = null) : Exce
  */
 class ActionExecutor {
 
-    suspend fun run(argv: List<String>): ExecResult = withContext(Dispatchers.IO) {
+    suspend fun run(argv: List<String>, maxChars: Int = DEFAULT_MAX_CHARS): ExecResult = withContext(Dispatchers.IO) {
         require(argv.isNotEmpty()) { "argv must not be empty" }
         val process = try {
             startRemoteProcess(argv.toTypedArray())
@@ -51,8 +51,8 @@ class ActionExecutor {
 
         try {
             coroutineScope {
-                val stdout = async(Dispatchers.IO) { readLimited(process.inputStream) }
-                val stderr = async(Dispatchers.IO) { readLimited(process.errorStream) }
+                val stdout = async(Dispatchers.IO) { readLimited(process.inputStream, maxChars) }
+                val stderr = async(Dispatchers.IO) { readLimited(process.errorStream, maxChars) }
                 val exitCode = process.waitFor()
                 ExecResult(
                     command = argv.joinToString(" "),
@@ -73,11 +73,11 @@ class ActionExecutor {
         }
     }
 
-    suspend fun runAll(commands: List<List<String>>): List<ExecResult> {
+    suspend fun runAll(commands: List<List<String>>, maxChars: Int = DEFAULT_MAX_CHARS): List<ExecResult> {
         val results = ArrayList<ExecResult>(commands.size)
         for (command in commands) {
             results += try {
-                run(command)
+                run(command, maxChars)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (throwable: Throwable) {
@@ -92,8 +92,7 @@ class ActionExecutor {
         return results
     }
 
-    private fun readLimited(stream: InputStream): String {
-        val limit = 32 * 1024
+    private fun readLimited(stream: InputStream, limit: Int): String {
         val builder = StringBuilder(1024)
         stream.bufferedReader().use { reader ->
             val buffer = CharArray(2048)
@@ -120,7 +119,10 @@ class ActionExecutor {
             ?: throw IllegalStateException("Shizuku.newProcess returned unexpected type")
     }
 
-    private companion object {
+    companion object {
+        /** 普通命令默认上限；dumpsys cpuinfo 这类输出较大，调用方可显式放大。 */
+        const val DEFAULT_MAX_CHARS = 32 * 1024
+        const val LARGE_MAX_CHARS = 512 * 1024
         private const val METHOD_NEW_PROCESS = "newProcess"
     }
 }

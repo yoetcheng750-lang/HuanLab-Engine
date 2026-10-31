@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.huanlab.engine.service.MemorySnapshot
 import com.huanlab.engine.service.Metric
 import com.huanlab.engine.service.metrics.CpuFrequencySnapshot
+import com.huanlab.engine.service.metrics.CpuUsageMetric
 import com.huanlab.engine.service.metrics.ProbeStatus
 import com.huanlab.engine.service.metrics.SensorCategory
 import com.huanlab.engine.service.metrics.ThermalSnapshot
@@ -79,8 +80,14 @@ fun MonitorScreen(state: UiState) {
             YoeSectionTitle("CPU 与内存", "跨调用采样窗口，避免瞬时抖动")
             Spacer(Modifier.height(14.dp))
             when (cpu) {
-                is Metric.Known -> YoeMetricBar("CPU", cpuAnim, MaterialTheme.colorScheme.primary)
-                is Metric.Unknown -> Text("CPU：不可用 · ${cpu.reason}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                is Metric.Known -> {
+                    YoeMetricBar("内核采样 /proc/stat", cpuAnim, MaterialTheme.colorScheme.primary)
+                }
+                is Metric.Unknown -> Text(
+                    "内核采样不可用 · ${cpu.reason}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Spacer(Modifier.height(14.dp))
             when (mem) {
@@ -127,6 +134,7 @@ fun MonitorScreen(state: UiState) {
             )
         }
 
+        CpuUsageCard(state.cpuUsage)
         CpuFrequencyCard(state.cpuFrequency)
         ThermalSensorsCard(state.thermalSensors)
 
@@ -145,6 +153,87 @@ fun MonitorScreen(state: UiState) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun CpuUsageCard(usage: CpuUsageMetric?) {
+    YoeCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        YoeSectionTitle("CPU 使用率", "user + kernel（执行态占用，不含 iowait/irq/softirq）")
+        Spacer(Modifier.height(10.dp))
+        val value = usage?.valuePercent
+        if (value != null) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    "%.1f%%".format(value),
+                    style = MaterialTheme.typography.displaySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    usage.sourceLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            val user = usage.userPercent
+            val kernel = usage.kernelPercent
+            if (user != null && kernel != null) {
+                Text(
+                    "执行态：${"%.1f".format(user)}% user + ${"%.1f".format(kernel)}% kernel",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            usage.systemTotalPercent?.let { total ->
+                Text(
+                    "系统总比例：${"%.1f".format(total)}%（含 iowait/irq/softirq，口径不同）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                buildString {
+                    usage.sampleWindowMillis?.let { append("窗口 ${it}ms · ") }
+                    usage.sampleAgeMillis?.let { append("样本年龄 ${it}ms · ") }
+                    append("状态 ${usage.status.name}")
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (usage.status != ProbeStatus.PASS) {
+                usage.reason?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        } else {
+            Text(
+                "—",
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "ColorOS 系统限制无法读取 CPU 使用率，请参考当前频率",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            usage?.reason?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            usage?.loadAverage1m?.let { load ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "系统负载（1分钟）：${"%.2f".format(load)}（负载不是 CPU 使用率）",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

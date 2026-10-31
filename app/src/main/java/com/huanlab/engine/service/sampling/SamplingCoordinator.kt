@@ -5,6 +5,8 @@ import com.huanlab.engine.core.Engine
 import com.huanlab.engine.service.DeviceMonitor
 import com.huanlab.engine.service.EngineProvider
 import com.huanlab.engine.service.metrics.CpuFrequencyMonitor
+import com.huanlab.engine.service.metrics.CpuUsageMetric
+import com.huanlab.engine.service.metrics.CpuUsageProvider
 import com.huanlab.engine.service.metrics.CpuFrequencySnapshot
 import com.huanlab.engine.service.metrics.ThermalMonitor
 import com.huanlab.engine.service.metrics.ThermalSnapshot
@@ -26,6 +28,7 @@ data class SamplingState(
     val snapshot: DeviceSnapshot? = null,
     val foreground: Metric<String> = Metric.Unknown("尚未采样"),
     val cpuFrequency: CpuFrequencySnapshot? = null,
+    val cpuUsage: CpuUsageMetric? = null,
     val thermalSensors: ThermalSnapshot? = null,
     val running: Boolean = false,
 )
@@ -41,6 +44,7 @@ class SamplingCoordinator(context: Context) {
     private val foregroundDetector = ForegroundAppDetector(context)
     private val engine: Engine = EngineProvider.get(context)
     private val cpuFrequencyMonitor = CpuFrequencyMonitor(engine)
+    private val cpuUsageProvider = CpuUsageProvider(engine)
     private val thermalMonitor = ThermalMonitor(context, engine)
 
     private val _state = MutableStateFlow(SamplingState())
@@ -77,6 +81,11 @@ class SamplingCoordinator(context: Context) {
                 } else {
                     current.cpuFrequency
                 }
+                val cpuUsage = if (tick % CPU_USAGE_EVERY_TICKS == 0) {
+                    runCatching { cpuUsageProvider.sample() }.getOrNull() ?: current.cpuUsage
+                } else {
+                    current.cpuUsage
+                }
                 val thermal = if (tick % THERMAL_EVERY_TICKS == 0) {
                     runCatching { thermalMonitor.sample() }.getOrNull() ?: current.thermalSensors
                 } else {
@@ -92,6 +101,7 @@ class SamplingCoordinator(context: Context) {
                     snapshot = snapshot ?: current.snapshot,
                     foreground = foreground,
                     cpuFrequency = cpuFrequency,
+                    cpuUsage = cpuUsage,
                     thermalSensors = thermal,
                     running = true,
                 )
@@ -112,6 +122,7 @@ class SamplingCoordinator(context: Context) {
         const val FOREGROUND_EVERY_TICKS = 3
         const val CPU_FREQ_EVERY_TICKS = 2
         const val THERMAL_EVERY_TICKS = 5
+        const val CPU_USAGE_EVERY_TICKS = 2
     }
 }
 
