@@ -1,24 +1,24 @@
 package com.huanlab.engine.ui
 
+import android.animation.ValueAnimator
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -44,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,23 +55,35 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.huanlab.engine.core.ShizukuPhase
 import com.huanlab.engine.shared.ThermalLevel
 import com.huanlab.engine.ui.theme.HuanLabTheme
+import com.huanlab.engine.ui.theme.YoeMotion
+import com.huanlab.engine.ui.theme.supportsDynamicColor
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var uiPreferences: UiPreferences
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        uiPreferences = UiPreferences(this)
         enableEdgeToEdge()
         setContent {
-            HuanLabTheme {
+            var dynamicColor by remember { mutableStateOf(uiPreferences.dynamicColorEnabled) }
+            HuanLabTheme(dynamicColor = dynamicColor) {
                 val viewModel: HuanLabViewModel = viewModel()
                 val state by viewModel.state.collectAsStateWithLifecycle()
-                HuanLabScreen(
+                YoeScreen(
                     state = state,
+                    dynamicColor = dynamicColor,
+                    dynamicColorSupported = supportsDynamicColor(),
+                    onToggleDynamicColor = { enabled ->
+                        dynamicColor = enabled
+                        uiPreferences.dynamicColorEnabled = enabled
+                    },
                     onTogglePerformance = viewModel::togglePerformance,
                     onPreviewRefreshRate = viewModel::previewRefreshRate,
                     onApplyRefreshRate = viewModel::applyRefreshRate,
@@ -82,196 +96,243 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun HuanLabScreen(
+private fun YoeScreen(
     state: UiState,
+    dynamicColor: Boolean,
+    dynamicColorSupported: Boolean,
+    onToggleDynamicColor: (Boolean) -> Unit,
     onTogglePerformance: (Boolean) -> Unit,
     onPreviewRefreshRate: (Float) -> Unit,
     onApplyRefreshRate: (Float) -> Unit,
     onRetryShizuku: () -> Unit,
     onWhitelistSelf: () -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-        Box(
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.surfaceDim,
+    ) { innerPadding ->
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color(0xFF0B1020),
-                            MaterialTheme.colorScheme.background,
-                            Color(0xFF05070D),
-                        ),
-                    ),
-                ),
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 24.dp, bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 56.dp, bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Header(state, onRetryShizuku)
-                StatusRow(state)
-                PerformanceCard(state, onTogglePerformance)
-                RefreshRateCard(state, onPreviewRefreshRate, onApplyRefreshRate)
-                MetricsCard(state)
-                ActionRow(state, onWhitelistSelf)
-                EventLog(state.events)
-            }
+            YoeHeader(state, onRetryShizuku)
+            DynamicColorCard(
+                enabled = dynamicColor,
+                supported = dynamicColorSupported,
+                onToggle = onToggleDynamicColor,
+            )
+            ShizukuBanner(state.shizuku.phase, state)
+            StatusStrip(state)
+            PerformanceCard(state, onTogglePerformance)
+            RefreshRateCard(state, onPreviewRefreshRate, onApplyRefreshRate)
+            MetricsCard(state)
+            WhitelistButton(state, onWhitelistSelf)
+            EventLog(state.events)
         }
     }
 }
 
 @Composable
-private fun Header(state: UiState, onRetry: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary),
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("幻", color = Color(0xFF080B12), fontSize = 18.sp)
-            }
-            Spacer(Modifier.width(12.dp))
-            Column {
+private fun YoeHeader(state: UiState, onRetry: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier.size(46.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
                 Text(
-                    "幻实验室",
-                    style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Text(
-                    "HuanLab Engine · 设备调优控制台",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "Y",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
             }
         }
-        Spacer(Modifier.height(18.dp))
-        AnimatedContent(
-            targetState = state.shizuku.phase,
-            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
-            label = "shizuku-status",
-        ) { phase ->
-            StatusBanner(phase, state)
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "重新检测 Shizuku",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(onClick = onRetry)
-                .padding(horizontal = 6.dp, vertical = 4.dp),
-        )
-    }
-}
-
-@Composable
-private fun StatusBanner(phase: ShizukuPhase, state: UiState) {
-    val color = when (phase) {
-        ShizukuPhase.CONNECTED_ROOT, ShizukuPhase.CONNECTED_SHELL -> Color(0xFF34D399)
-        ShizukuPhase.NOT_AUTHORIZED -> Color(0xFFFBBF24)
-        ShizukuPhase.NOT_RUNNING, ShizukuPhase.NOT_INSTALLED -> Color(0xFFFF6B6B)
-        ShizukuPhase.UNKNOWN -> Color(0xFF94A3B8)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(color.copy(alpha = 0.10f))
-            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(9.dp).clip(CircleShape).background(color))
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                when (phase) {
-                    ShizukuPhase.CONNECTED_SHELL -> "Shizuku 已连接 · shell"
-                    ShizukuPhase.CONNECTED_ROOT -> "Shizuku 已连接 · root"
-                    ShizukuPhase.NOT_AUTHORIZED -> "Shizuku 等待授权"
-                    ShizukuPhase.NOT_RUNNING -> "Shizuku 服务未运行"
-                    ShizukuPhase.NOT_INSTALLED -> "未安装 Shizuku"
-                    ShizukuPhase.UNKNOWN -> "Shizuku 状态未知"
-                },
-                style = MaterialTheme.typography.titleMedium,
-                color = color,
+                "YOET",
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                state.shizuku.detail,
+                "HumanLab Engine · 设备调优控制台",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Text(
-            thermalLabel(state.thermal),
-            style = MaterialTheme.typography.labelSmall,
-            color = thermalColor(state.thermal),
+            "重试",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(onClick = onRetry)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
         )
     }
 }
 
 @Composable
-private fun StatusRow(state: UiState) {
+private fun DynamicColorCard(
+    enabled: Boolean,
+    supported: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    ExpressiveCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "动态取色",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    when {
+                        !supported -> "需要 Android 12 及以上，本机不支持"
+                        enabled -> "跟随系统壁纸的 Material You 配色"
+                        else -> "使用 YOET 品牌深空配色"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = enabled && supported,
+                onCheckedChange = onToggle,
+                enabled = supported,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    uncheckedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShizukuBanner(phase: ShizukuPhase, state: UiState) {
+    val accent = when (phase) {
+        ShizukuPhase.CONNECTED_ROOT, ShizukuPhase.CONNECTED_SHELL -> MaterialTheme.colorScheme.tertiary
+        ShizukuPhase.NOT_AUTHORIZED -> MaterialTheme.colorScheme.primary
+        ShizukuPhase.NOT_RUNNING, ShizukuPhase.NOT_INSTALLED -> MaterialTheme.colorScheme.error
+        ShizukuPhase.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(accent),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                AnimatedContent(
+                    targetState = phase,
+                    transitionSpec = {
+                        fadeIn(YoeMotion.effects()) togetherWith
+                            fadeOut(YoeMotion.effects())
+                    },
+                    label = "banner-phase",
+                ) { current ->
+                    Text(
+                        when (current) {
+                            ShizukuPhase.CONNECTED_SHELL -> "Shizuku 已连接 · shell"
+                            ShizukuPhase.CONNECTED_ROOT -> "Shizuku 已连接 · root"
+                            ShizukuPhase.NOT_AUTHORIZED -> "Shizuku 等待授权"
+                            ShizukuPhase.NOT_RUNNING -> "Shizuku 服务未运行"
+                            ShizukuPhase.NOT_INSTALLED -> "未安装 Shizuku"
+                            ShizukuPhase.UNKNOWN -> "Shizuku 状态未知"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = accent,
+                    )
+                }
+                Text(
+                    state.shizuku.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                thermalLabel(state.thermal),
+                style = MaterialTheme.typography.labelMedium,
+                color = thermalColor(state.thermal),
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusStrip(state: UiState) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Pill("热状态", thermalLabel(state.thermal), thermalColor(state.thermal), Modifier.weight(1f))
-        Pill("CPU", "${state.cpuPercent.toInt()}%", MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
-        Pill(
+        MetricPill("热状态", thermalLabel(state.thermal), thermalColor(state.thermal), Modifier.weight(1f))
+        MetricPill("CPU", "${state.cpuPercent.toInt()}%", MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
+        MetricPill(
             "内存",
             if (state.memory.totalBytes > 0L) "${(state.memory.usedRatio * 100).toInt()}%" else "--",
-            MaterialTheme.colorScheme.tertiary,
+            MaterialTheme.colorScheme.primary,
             Modifier.weight(1f),
         )
     }
 }
 
 @Composable
-private fun Pill(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+private fun MetricPill(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(18.dp),
+        modifier = modifier,
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(2.dp))
-        Text(value, style = MaterialTheme.typography.titleMedium, color = color)
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(value, style = MaterialTheme.typography.titleMedium, color = accent)
+        }
     }
 }
 
 @Composable
 private fun PerformanceCard(state: UiState, onToggle: (Boolean) -> Unit) {
-    val accent = MaterialTheme.colorScheme.primary
-    SectionCard(
-        title = "性能模式",
-        subtitle = "固定性能模式 + 关闭省电 + 动画压缩",
-        accent = accent,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    ExpressiveCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        SectionHeader("性能模式", "固定性能模式 + 关闭省电 + 动画压缩")
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     if (state.performanceEnabled) "电竞性能" else "均衡",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = if (state.performanceEnabled) accent else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = if (state.performanceEnabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
                 )
                 Text(
-                    if (state.performanceEnabled) "cmd power set-fixed-performance-mode-enabled true"
-                    else "默认调度策略",
+                    if (state.performanceEnabled) {
+                        "cmd power set-fixed-performance-mode-enabled true"
+                    } else {
+                        "默认调度策略"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -282,11 +343,11 @@ private fun PerformanceCard(state: UiState, onToggle: (Boolean) -> Unit) {
                 onCheckedChange = onToggle,
                 enabled = !state.busy,
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color(0xFF0B0E14),
-                    checkedTrackColor = accent,
+                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
                     uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    uncheckedBorderColor = MaterialTheme.colorScheme.outline,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    uncheckedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                 ),
             )
         }
@@ -303,17 +364,11 @@ private fun RefreshRateCard(
     LaunchedEffect(state.refreshRate) { local = state.refreshRate }
     val accent = MaterialTheme.colorScheme.secondary
 
-    SectionCard(
-        title = "高刷调节",
-        subtitle = "settings put system peak_refresh_rate",
-        accent = accent,
-    ) {
+    ExpressiveCard(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        SectionHeader("高刷调节", "settings put system peak_refresh_rate")
+        Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                "${local.toInt()}",
-                style = MaterialTheme.typography.displaySmall,
-                color = accent,
-            )
+            Text("${local.toInt()}", style = MaterialTheme.typography.displaySmall, color = accent)
             Text(
                 " Hz",
                 style = MaterialTheme.typography.titleMedium,
@@ -323,7 +378,7 @@ private fun RefreshRateCard(
             Spacer(Modifier.weight(1f))
             Text(
                 if (state.busy) "下发中…" else "松手下发",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -340,42 +395,45 @@ private fun RefreshRateCard(
             colors = SliderDefaults.colors(
                 thumbColor = accent,
                 activeTrackColor = accent,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             ),
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("60", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("90", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("120", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("144", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            listOf("60", "90", "120", "144").forEach { label ->
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun MetricsCard(state: UiState) {
-    val cpuTarget = state.cpuPercent / 100f
-    val memTarget = state.memory.usedRatio
+    val animationsEnabled = ValueAnimator.areAnimatorsEnabled()
+    val spatial: FiniteAnimationSpec<Float> =
+        if (animationsEnabled) YoeMotion.spatial() else snap()
+
     val cpuAnim by animateFloatAsState(
-        targetValue = cpuTarget,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        targetValue = state.cpuPercent / 100f,
+        animationSpec = spatial,
         label = "cpu",
     )
     val memAnim by animateFloatAsState(
-        targetValue = memTarget,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessVeryLow),
+        targetValue = state.memory.usedRatio,
+        animationSpec = spatial,
         label = "mem",
     )
 
-    SectionCard(
-        title = "状态监控",
-        subtitle = "每 2 秒轮询 /proc/stat 与 /proc/meminfo",
-        accent = MaterialTheme.colorScheme.tertiary,
-    ) {
+    ExpressiveCard(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        SectionHeader("状态监控", "每 2 秒轮询 /proc/stat 与 /proc/meminfo")
+        Spacer(Modifier.height(16.dp))
         MetricBar("CPU 占用", cpuAnim, MaterialTheme.colorScheme.secondary)
-        Spacer(Modifier.height(14.dp))
-        MetricBar("内存占用", memAnim, MaterialTheme.colorScheme.tertiary)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(16.dp))
+        MetricBar("内存占用", memAnim, MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(12.dp))
         Text(
             if (state.memory.totalBytes > 0L) {
                 "MemTotal ${gb(state.memory.totalBytes)} · MemAvailable ${gb(state.memory.availableBytes)}"
@@ -390,55 +448,66 @@ private fun MetricsCard(state: UiState) {
 }
 
 @Composable
-private fun MetricBar(label: String, ratio: Float, color: Color) {
+private fun MetricBar(label: String, ratio: Float, accent: Color) {
     Column {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("${(ratio * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, color = color)
+            Text(
+                label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("${(ratio * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, color = accent)
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .height(10.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(ratio.coerceIn(0f, 1f))
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Brush.horizontalGradient(listOf(color.copy(alpha = 0.55f), color))),
+                    .height(10.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(accent.copy(alpha = 0.6f), accent),
+                        ),
+                    ),
             )
         }
     }
 }
 
 @Composable
-private fun ActionRow(state: UiState, onWhitelist: () -> Unit) {
+private fun WhitelistButton(state: UiState, onClick: () -> Unit) {
     Button(
-        onClick = onWhitelist,
+        onClick = onClick,
         enabled = !state.busy,
-        modifier = Modifier.fillMaxWidth().height(48.dp),
-        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
     ) {
-        Text("加入 Doze 白名单（dumpsys deviceidle whitelist +pkg）", style = MaterialTheme.typography.bodySmall)
+        Text(
+            "加入 Doze 白名单 · deviceidle whitelist",
+            style = MaterialTheme.typography.labelMedium,
+        )
     }
 }
 
 @Composable
 private fun EventLog(events: List<String>) {
     if (events.isEmpty()) return
-    SectionCard(
-        title = "执行记录",
-        subtitle = "最近 8 条真实命令结果",
-        accent = MaterialTheme.colorScheme.onSurfaceVariant,
-    ) {
+    ExpressiveCard(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        SectionHeader("执行记录", "最近 8 条真实命令结果")
+        Spacer(Modifier.height(12.dp))
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             events.forEach { event ->
                 Text(
@@ -453,45 +522,33 @@ private fun EventLog(events: List<String>) {
 }
 
 @Composable
-private fun SectionCard(
-    title: String,
-    subtitle: String,
-    accent: Color,
-    content: @Composable () -> Unit,
+private fun SectionHeader(title: String, subtitle: String) {
+    Column {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ExpressiveCard(
+    containerColor: Color,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    val border by animateColorAsState(
-        targetValue = accent.copy(alpha = 0.28f),
-        animationSpec = tween(400),
-        label = "card-border",
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, border, RoundedCornerShape(20.dp))
-            .padding(18.dp),
+    Surface(
+        color = containerColor,
+        shape = RoundedCornerShape(28.dp),
+        shadowElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .width(3.dp)
-                    .height(16.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(accent),
-            )
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-        content()
+        Column(modifier = Modifier.padding(20.dp), content = content)
     }
 }
 

@@ -10,3 +10,6 @@ build/
 /app/build/
 *.apk
 *.aab
+
+# Kotlin 2.0 session dir
+.kotlin/
