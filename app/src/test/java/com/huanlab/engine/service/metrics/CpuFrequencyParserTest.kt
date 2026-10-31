@@ -59,7 +59,7 @@ class CpuFrequencyParserTest {
 
     @Test
     fun `khz to mhz conversion`() {
-        assertEquals(2.8, CpuFrequencyParser.toMhz(2_800_000L), 0.0001)
+        assertEquals(2800.0, CpuFrequencyParser.toMhz(2_800_000L), 0.0001)
     }
 
     @Test

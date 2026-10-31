@@ -15,13 +15,13 @@ object ThermalParser {
         val normalized = rawType.trim().lowercase()
         if (normalized.isEmpty()) return SensorCategory.OTHER
         return when {
-            containsToken(normalized, "gpu") -> SensorCategory.GPU
-            containsToken(normalized, "batt") -> SensorCategory.BATTERY
+            normalized.contains("gpu") -> SensorCategory.GPU
+            normalized.contains("batt") -> SensorCategory.BATTERY
             containsToken(normalized, "soc") -> SensorCategory.SOC
             containsToken(normalized, "cpu") -> SensorCategory.CPU
-            containsToken(normalized, "skin") -> SensorCategory.SKIN
-            containsToken(normalized, "pmic") -> SensorCategory.PMIC
-            containsToken(normalized, "board") || containsToken(normalized, "pcb") -> SensorCategory.BOARD
+            normalized.contains("skin") -> SensorCategory.SKIN
+            normalized.contains("pmic") -> SensorCategory.PMIC
+            normalized.contains("board") || normalized.contains("pcb") -> SensorCategory.BOARD
             else -> SensorCategory.OTHER
         }
     }
