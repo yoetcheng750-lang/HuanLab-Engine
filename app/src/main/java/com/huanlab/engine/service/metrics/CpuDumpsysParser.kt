@@ -12,10 +12,13 @@ object CpuDumpsysParser {
 
     const val FRESH_AGE_MS = 15_000L
 
-    data class ParseResult(
-        val metric: CpuUsageMetric?,
+    data class Parsed(
+        val valuePercent: Double?,
+        val systemTotalPercent: Double?,
         val status: ProbeStatus,
         val reason: String?,
+        val sampleAgeMillis: Long?,
+        val sampleWindowMillis: Long?,
     )
 
     private val totalPattern = Regex("""(\d+(?:\.\d+)?)%\s+TOTAL:\s*(.+)$""")
@@ -25,24 +28,30 @@ object CpuDumpsysParser {
     )
     private val categoryPattern = Regex("""(\d+(?:\.\d+)?)%\s+(user|kernel|iowait|irq|softirq)""")
 
-    fun parse(output: String?, nowMillis: Long = System.currentTimeMillis()): ParseResult {
+    fun parse(output: String?, nowMillis: Long = System.currentTimeMillis()): Parsed {
         val text = output?.trim().orEmpty()
         if (text.isEmpty()) {
-            return ParseResult(null, ProbeStatus.UNKNOWN, "dumpsys cpuinfo 无输出")
+            return Parsed(null, null, ProbeStatus.UNKNOWN, "dumpsys cpuinfo 无输出", null, null)
         }
         val totalLines = text.lineSequence().filter { it.contains("TOTAL:") }.toList()
         if (totalLines.isEmpty()) {
-            return ParseResult(null, ProbeStatus.UNSUPPORTED, "输出中没有 TOTAL 汇总行")
+            return Parsed(null, null, ProbeStatus.UNSUPPORTED, "输出中没有 TOTAL 汇总行", null, null)
         }
         if (totalLines.size > 1) {
-            return ParseResult(null, ProbeStatus.UNKNOWN, "存在 ${totalLines.size} 个 TOTAL 行，结果冲突")
+            return Parsed(
+                null, null, ProbeStatus.UNKNOWN,
+                "存在 ${totalLines.size} 个 TOTAL 行，结果冲突", null, null,
+            )
         }
 
         val totalLine = totalLines.first().trim()
         val totalMatch = totalPattern.find(totalLine)
-            ?: return ParseResult(null, ProbeStatus.FAILED, "TOTAL 行格式不支持: ${totalLine.take(80)}")
+            ?: return Parsed(
+                null, null, ProbeStatus.FAILED,
+                "TOTAL 行格式不支持: ${totalLine.take(80)}", null, null,
+            )
         val systemTotal = totalMatch.groupValues[1].toDoubleOrNull()
-            ?: return ParseResult(null, ProbeStatus.FAILED, "系统总比例解析失败")
+            ?: return Parsed(null, null, ProbeStatus.FAILED, "系统总比例解析失败", null, null)
         val categoriesRaw = totalMatch.groupValues[2]
 
         val categories = HashMap<String, Double>()
@@ -53,40 +62,28 @@ object CpuDumpsysParser {
         val user = categories["user"]
         val kernel = categories["kernel"]
         if (user == null || kernel == null) {
-            return ParseResult(null, ProbeStatus.UNKNOWN, "TOTAL 行缺少 user 或 kernel 字段")
+            return Parsed(null, null, ProbeStatus.UNKNOWN, "TOTAL 行缺少 user 或 kernel 字段", null, null)
         }
         if (!isFinitePercent(user) || !isFinitePercent(kernel) || !isFinitePercent(systemTotal)) {
-            return ParseResult(null, ProbeStatus.FAILED, "百分比数值非法")
+            return Parsed(null, null, ProbeStatus.FAILED, "百分比数值非法", null, null)
         }
 
         val windowInfo = parseWindow(text, nowMillis)
         val value = (user + kernel).coerceIn(0.0, 100.0)
         val freshness = when {
-            windowInfo.ageMillis == null -> ProbeStatus.DEGRADED to "无法确认采样时间"
+            windowInfo.ageMillis == null -> ProbeStatus.UNKNOWN to "无法确认采样时间"
             windowInfo.ageMillis > FRESH_AGE_MS -> ProbeStatus.UNKNOWN to
                 "采样已过期（${windowInfo.ageMillis}ms 前）"
             else -> ProbeStatus.PASS to null
         }
-
-        val metric = CpuUsageMetric(
-            valuePercent = value,
-            userPercent = user,
-            kernelPercent = kernel,
+        return Parsed(
+            valuePercent = if (freshness.first == ProbeStatus.PASS) value else null,
             systemTotalPercent = systemTotal,
-            iowaitPercent = categories["iowait"],
-            irqPercent = categories["irq"],
-            softirqPercent = categories["softirq"],
-            loadAverage1m = null,
-            loadAverage5m = null,
-            loadAverage15m = null,
-            source = CpuUsageSource.DUMPSYS_CPUINFO,
             status = freshness.first,
             reason = freshness.second,
-            sampledAtMillis = nowMillis,
-            sampleWindowMillis = windowInfo.windowMillis,
             sampleAgeMillis = windowInfo.ageMillis,
+            sampleWindowMillis = windowInfo.windowMillis,
         )
-        return ParseResult(metric, freshness.first, freshness.second)
     }
 
     private fun isFinitePercent(value: Double): Boolean =

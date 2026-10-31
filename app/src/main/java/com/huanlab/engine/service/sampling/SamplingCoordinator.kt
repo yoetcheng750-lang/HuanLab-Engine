@@ -82,7 +82,8 @@ class SamplingCoordinator(context: Context) {
                     current.cpuFrequency
                 }
                 val cpuUsage = if (tick % CPU_USAGE_EVERY_TICKS == 0) {
-                    runCatching { cpuUsageProvider.sample() }.getOrNull() ?: current.cpuUsage
+                    runCatching { cpuUsageProvider.sample() }
+                        .getOrElse { com.huanlab.engine.service.metrics.CpuUsageMetric.unknown("采样异常") }
                 } else {
                     current.cpuUsage
                 }

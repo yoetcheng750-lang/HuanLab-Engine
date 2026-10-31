@@ -37,16 +37,10 @@ import com.huanlab.engine.ui.theme.YoeMotion
 
 @Composable
 fun MonitorScreen(state: UiState) {
-    val cpu = state.cpu
     val mem = state.memory
     val thermal = state.thermal
     val refresh = state.snapshot?.refreshRate
 
-    val cpuAnim by animateFloatAsState(
-        (cpu.valueOrNull() ?: 0f) / 100f,
-        YoeMotion.spatial(),
-        label = "mon-cpu",
-    )
     val memAnim by animateFloatAsState(
         (mem.valueOrNull()?.usedRatio ?: 0f) / 100f,
         YoeMotion.spatial(),
@@ -72,23 +66,17 @@ fun MonitorScreen(state: UiState) {
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             YoeStatusTile("热状态", thermalText(thermal), thermalColorOf(thermal), Modifier.weight(1f))
-            YoeStatusTile("CPU", cpu.cpuPercentText(), MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+            YoeStatusTile(
+                "CPU",
+                state.cpuUsage?.valuePercent?.let { "%.1f%%".format(it) } ?: "—",
+                MaterialTheme.colorScheme.primary,
+                Modifier.weight(1f),
+            )
             YoeStatusTile("内存", mem.memPercentText(), MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
         }
 
         YoeCard {
-            YoeSectionTitle("CPU 与内存", "跨调用采样窗口，避免瞬时抖动")
-            Spacer(Modifier.height(14.dp))
-            when (cpu) {
-                is Metric.Known -> {
-                    YoeMetricBar("内核采样 /proc/stat", cpuAnim, MaterialTheme.colorScheme.primary)
-                }
-                is Metric.Unknown -> Text(
-                    "内核采样不可用 · ${cpu.reason}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            YoeSectionTitle("内存", "来源 /proc/meminfo")
             Spacer(Modifier.height(14.dp))
             when (mem) {
                 is Metric.Known -> YoeMetricBar("内存", memAnim, MaterialTheme.colorScheme.tertiary)
@@ -160,80 +148,27 @@ fun MonitorScreen(state: UiState) {
 @Composable
 private fun CpuUsageCard(usage: CpuUsageMetric?) {
     YoeCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        YoeSectionTitle("CPU 使用率", "user + kernel（执行态占用，不含 iowait/irq/softirq）")
+        YoeSectionTitle("CPU 使用率", null)
         Spacer(Modifier.height(10.dp))
         val value = usage?.valuePercent
         if (value != null) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    "%.1f%%".format(value),
-                    style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    usage.sourceLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            val user = usage.userPercent
-            val kernel = usage.kernelPercent
-            if (user != null && kernel != null) {
-                Text(
-                    "执行态：${"%.1f".format(user)}% user + ${"%.1f".format(kernel)}% kernel",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            usage.systemTotalPercent?.let { total ->
-                Text(
-                    "系统总比例：${"%.1f".format(total)}%（含 iowait/irq/softirq，口径不同）",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             Text(
-                buildString {
-                    usage.sampleWindowMillis?.let { append("窗口 ${it}ms · ") }
-                    usage.sampleAgeMillis?.let { append("样本年龄 ${it}ms · ") }
-                    append("状态 ${usage.status.name}")
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                "%.1f%%".format(value),
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.primary,
             )
-            if (usage.status != ProbeStatus.PASS) {
-                usage.reason?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                }
-            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "数据来源：dumpsys cpuinfo",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.secondary,
+            )
         } else {
             Text(
                 "—",
                 style = MaterialTheme.typography.displaySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "ColorOS 系统限制无法读取 CPU 使用率，请参考当前频率",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            usage?.reason?.let {
-                Spacer(Modifier.height(4.dp))
-                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            usage?.loadAverage1m?.let { load ->
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "系统负载（1分钟）：${"%.2f".format(load)}（负载不是 CPU 使用率）",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }
@@ -362,11 +297,6 @@ private fun ThermalSensorsCard(snapshot: ThermalSnapshot?) {
 
 private fun Metric<Float>.hzText(): String = when (this) {
     is Metric.Known -> "%.1fHz".format(value)
-    is Metric.Unknown -> "—"
-}
-
-private fun Metric<Float>.cpuPercentText(): String = when (this) {
-    is Metric.Known -> "${value.toInt()}%"
     is Metric.Unknown -> "—"
 }
 

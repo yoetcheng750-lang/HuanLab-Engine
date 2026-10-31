@@ -79,7 +79,7 @@ fun OverlayContent(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "CPU " + (cpuUsagePercent?.let { "%.0f%%".format(it) } ?: cpu.cpuPercentText()),
+                    "CPU " + (cpuUsagePercent?.let { "%.1f%%".format(it) } ?: "—"),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -124,11 +124,6 @@ fun OverlayContent(
             }
         }
     }
-}
-
-private fun Metric<Float>.cpuPercentText(): String = when (this) {
-    is Metric.Known -> "${value.toInt()}%"
-    is Metric.Unknown -> "—"
 }
 
 private fun Metric<MemorySnapshot>.memPercentText(): String = when (this) {

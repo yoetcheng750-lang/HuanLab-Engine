@@ -216,7 +216,7 @@ private fun StatusTiles(state: UiState) {
         YoeStatusTile("热状态", thermalText(state.thermal), thermalColorOf(state.thermal), Modifier.weight(1f))
         YoeStatusTile(
             "CPU",
-            state.cpuUsage?.valuePercent?.let { "%.0f%%".format(it) } ?: state.cpu.cpuPercentText(),
+            state.cpuUsage?.valuePercent?.let { "%.1f%%".format(it) } ?: "—",
             MaterialTheme.colorScheme.primary,
             Modifier.weight(1f),
         )
@@ -385,11 +385,6 @@ private fun EventLog(events: List<String>) {
             }
         }
     }
-}
-
-private fun Metric<Float>.cpuPercentText(): String = when (this) {
-    is Metric.Known -> "${value.toInt()}%"
-    is Metric.Unknown -> "—"
 }
 
 private fun Metric<MemorySnapshot>.memPercentText(): String = when (this) {
