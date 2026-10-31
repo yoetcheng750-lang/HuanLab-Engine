@@ -9,9 +9,22 @@
 
     <application
         android:allowBackup="false"
-        android:label="HuanLab Engine"
+        android:icon="@mipmap/ic_launcher"
+        android:label="幻实验室"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:theme="@style/Theme.HuanLab">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:theme="@style/Theme.HuanLab">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

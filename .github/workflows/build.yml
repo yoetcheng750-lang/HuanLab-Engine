@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -18,16 +20,30 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          accept-android-sdk-licenses: true
+
+      - name: Verify toolchain
+        run: |
+          java -version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms"
+          ls "$ANDROID_HOME/build-tools"
+          unzip -l gradle/wrapper/gradle-wrapper.jar | tail -3
+          ls -l gradlew
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
 
       - name: Build Debug APK
-        run: ./gradlew --no-daemon assembleDebug
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HuanLab-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: HuanLab-Engine-Debug-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
