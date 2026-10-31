@@ -13,3 +13,18 @@ build/
 
 # Kotlin 2.0 session dir
 .kotlin/
+
+# V4 P0：敏感配置与凭据，禁止入库
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+secrets.properties
+keystore.properties
+signing.properties
+.env
+.env.*
+*.log
+crash*.log

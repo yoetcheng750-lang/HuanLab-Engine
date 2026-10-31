@@ -29,16 +29,16 @@ class ForegroundAppDetector(private val context: Context) {
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
-    fun currentForeground(): Metric<String> {
+    fun currentForeground(): Metric<String> = runCatching {
         if (!hasUsageAccess()) {
-            return Metric.Unknown("缺少「使用情况访问」权限")
+            return@runCatching Metric.Unknown("缺少「使用情况访问」权限")
         }
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-            ?: return Metric.Unknown("UsageStatsManager 不可用")
+            ?: return@runCatching Metric.Unknown("UsageStatsManager 不可用")
         val now = System.currentTimeMillis()
         val events = runCatching {
             manager.queryEvents(now - LOOKBACK_MS, now)
-        }.getOrNull() ?: return Metric.Unknown("读取使用情况事件失败")
+        }.getOrNull() ?: return@runCatching Metric.Unknown("读取使用情况事件失败")
 
         var lastPackage: String? = null
         var lastAt = 0L
@@ -52,10 +52,16 @@ class ForegroundAppDetector(private val context: Context) {
                 }
             }
         }
-        return if (lastPackage != null && lastPackage != context.packageName) {
+        if (lastPackage != null && lastPackage != context.packageName) {
             Metric.Known(lastPackage)
         } else {
             Metric.Unknown("最近窗口内无前台应用事件")
+        }
+    }.getOrElse { throwable ->
+        if (throwable is SecurityException) {
+            Metric.Unknown("缺少「使用情况访问」权限")
+        } else {
+            Metric.Unknown("读取前台应用失败：${throwable.javaClass.simpleName}")
         }
     }
 

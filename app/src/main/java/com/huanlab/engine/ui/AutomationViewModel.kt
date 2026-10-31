@@ -64,7 +64,21 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
     private suspend fun loop() {
         while (true) {
             if (_state.value.enabled) {
-                val outcome = withContext(Dispatchers.IO) { automation.tick() }
+                val outcome = withContext(Dispatchers.IO) {
+                    runCatching { automation.tick() }.getOrElse { throwable ->
+                        AutomationOutcome(
+                            active = true,
+                            foreground = com.huanlab.engine.service.Metric.Unknown("调度异常"),
+                            profileLabel = null,
+                            targetPerformance = null,
+                            targetRefreshRate = null,
+                            reason = "ENGINE_ERROR",
+                            executed = false,
+                            verified = null,
+                            message = "自动调度异常已隔离：${throwable.javaClass.simpleName}",
+                        )
+                    }
+                }
                 _state.update {
                     it.copy(
                         outcome = outcome,

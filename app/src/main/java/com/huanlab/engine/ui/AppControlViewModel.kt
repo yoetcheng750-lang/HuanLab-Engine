@@ -49,7 +49,8 @@ class AppControlViewModel(application: Application) : AndroidViewModel(applicati
     fun refresh() {
         viewModelScope.launch {
             val snapshot = withContext(Dispatchers.IO) {
-                val apps = manager.listUserApps().map { app ->
+                val installed = runCatching { manager.listUserApps() }.getOrElse { emptyList() }
+                val apps = installed.map { app ->
                     val lockState = manager.stateOf(app.packageName)
                     ManagedAppUi(
                         packageName = app.packageName,
@@ -126,7 +127,7 @@ class AppControlViewModel(application: Application) : AndroidViewModel(applicati
         if (_state.value.busy) return
         viewModelScope.launch {
             _state.update { it.copy(busy = true) }
-            val outcomes = manager.restoreAll()
+            val outcomes = runCatching { manager.restoreAll() }.getOrElse { emptyList() }
             val ok = outcomes.count { it.state == AppLockState.UNLOCKED }
             val pending = outcomes.count { it.state == AppLockState.PENDING }
             val failed = outcomes.size - ok - pending
@@ -149,7 +150,8 @@ class AppControlViewModel(application: Application) : AndroidViewModel(applicati
             var drifted = 0
             var pending = 0
             for (app in targets) {
-                val state = manager.verify(app.packageName)
+                val state = runCatching { manager.verify(app.packageName) }
+                    .getOrDefault(AppLockState.PENDING)
                 when (state) {
                     AppLockState.DRIFTED -> drifted++
                     AppLockState.PENDING -> pending++
