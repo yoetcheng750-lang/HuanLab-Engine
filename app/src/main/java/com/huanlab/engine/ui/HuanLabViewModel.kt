@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.huanlab.engine.action.EngineActions
 import com.huanlab.engine.core.Engine
+import com.huanlab.engine.service.EngineProvider
 import com.huanlab.engine.core.ExecutionReport
 import com.huanlab.engine.core.MemoryStat
 import com.huanlab.engine.core.ShizukuPhase
@@ -33,12 +34,11 @@ data class UiState(
 
 class HuanLabViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val engine = Engine(application)
+    private val engine: Engine = EngineProvider.get(application)
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
-        engine.start()
         viewModelScope.launch { pollLoop() }
     }
 
@@ -137,7 +137,7 @@ class HuanLabViewModel(application: Application) : AndroidViewModel(application)
     }
 
     override fun onCleared() {
-        engine.close()
+        // Engine 是应用级共享实例，由进程生命周期管理，这里不关闭。
         super.onCleared()
     }
 
