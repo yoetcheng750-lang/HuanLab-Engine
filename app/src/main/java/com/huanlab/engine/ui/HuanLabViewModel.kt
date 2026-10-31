@@ -5,12 +5,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.huanlab.engine.action.EngineActions
 import com.huanlab.engine.core.Engine
-import com.huanlab.engine.service.EngineProvider
 import com.huanlab.engine.core.ExecutionReport
-import com.huanlab.engine.core.MemoryStat
 import com.huanlab.engine.core.ShizukuPhase
 import com.huanlab.engine.core.ShizukuUiState
-import com.huanlab.engine.shared.ThermalLevel
+import com.huanlab.engine.service.DeviceMonitor
+import com.huanlab.engine.service.DeviceSnapshot
+import com.huanlab.engine.service.EngineProvider
+import com.huanlab.engine.service.Metric
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,19 +23,22 @@ import kotlinx.coroutines.withContext
 
 data class UiState(
     val shizuku: ShizukuUiState = ShizukuUiState(ShizukuPhase.UNKNOWN, "初始化中"),
-    val thermal: ThermalLevel = ThermalLevel.UNKNOWN,
-    val cpuPercent: Float = 0f,
-    val memory: MemoryStat = MemoryStat(0L, 0L),
+    val snapshot: DeviceSnapshot? = null,
     val performanceEnabled: Boolean = false,
-    val refreshRate: Float = 120f,
-    val refreshRatePending: Float? = null,
+    val refreshRateTarget: Float = 120f,
     val busy: Boolean = false,
     val events: List<String> = emptyList(),
-)
+) {
+    val cpu: Metric<Float> get() = snapshot?.cpuPercent ?: Metric.Unknown("尚未采样")
+    val memory get() = snapshot?.memory ?: Metric.Unknown("尚未采样")
+    val thermal get() = snapshot?.thermal ?: Metric.Unknown("尚未采样")
+}
 
 class HuanLabViewModel(application: Application) : AndroidViewModel(application) {
 
     private val engine: Engine = EngineProvider.get(application)
+    private val monitor = DeviceMonitor(application)
+
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -44,23 +48,11 @@ class HuanLabViewModel(application: Application) : AndroidViewModel(application)
 
     private suspend fun pollLoop() {
         while (true) {
-            val snapshot = withContext(Dispatchers.IO) {
-                Snapshot(
-                    shizuku = engine.shizukuState(),
-                    thermal = engine.thermalLevel(),
-                    cpu = engine.cpuUsagePercent(),
-                    memory = engine.memory(),
-                )
+            val result = withContext(Dispatchers.IO) {
+                monitor.sample() to engine.shizukuState()
             }
-            _state.update {
-                it.copy(
-                    shizuku = snapshot.shizuku,
-                    thermal = snapshot.thermal,
-                    cpuPercent = snapshot.cpu,
-                    memory = snapshot.memory,
-                )
-            }
-            delay(2_000L)
+            _state.update { it.copy(snapshot = result.first, shizuku = result.second) }
+            delay(POLL_INTERVAL_MS)
         }
     }
 
@@ -84,7 +76,7 @@ class HuanLabViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun previewRefreshRate(value: Float) {
-        _state.update { it.copy(refreshRatePending = value) }
+        _state.update { it.copy(refreshRateTarget = value) }
     }
 
     fun applyRefreshRate(value: Float) {
@@ -96,8 +88,7 @@ class HuanLabViewModel(application: Application) : AndroidViewModel(application)
             val success = report is ExecutionReport.Executed && report.allOk
             _state.update {
                 it.copy(
-                    refreshRate = if (success) hz.toFloat() else it.refreshRate,
-                    refreshRatePending = null,
+                    refreshRateTarget = if (success) hz.toFloat() else it.refreshRateTarget,
                     busy = false,
                 )
             }
@@ -116,7 +107,7 @@ class HuanLabViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun pushEvent(title: String, report: ExecutionReport) {
+    fun pushEvent(title: String, report: ExecutionReport) {
         val text = when (report) {
             is ExecutionReport.Executed -> {
                 val failed = report.results.count { !it.ok }
@@ -125,26 +116,21 @@ class HuanLabViewModel(application: Application) : AndroidViewModel(application)
             }
             is ExecutionReport.Rejected -> "$title 未执行\n${report.summary}"
         }
-        _state.update { current ->
-            current.copy(events = (listOf(text) + current.events).take(8))
-        }
+        pushEvent(text)
     }
 
-    private fun pushEvent(text: String) {
+    fun pushEvent(text: String) {
         _state.update { current ->
             current.copy(events = (listOf(text) + current.events).take(8))
         }
     }
 
     override fun onCleared() {
-        // Engine 是应用级共享实例，由进程生命周期管理，这里不关闭。
+        // Engine 为应用级共享实例，由进程生命周期管理。
         super.onCleared()
     }
 
-    private data class Snapshot(
-        val shizuku: ShizukuUiState,
-        val thermal: ThermalLevel,
-        val cpu: Float,
-        val memory: MemoryStat,
-    )
+    private companion object {
+        const val POLL_INTERVAL_MS = 2_000L
+    }
 }

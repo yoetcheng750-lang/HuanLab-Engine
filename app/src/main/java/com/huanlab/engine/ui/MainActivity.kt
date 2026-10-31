@@ -19,9 +19,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.huanlab.engine.ui.screen.AppControlScreen
+import com.huanlab.engine.ui.screen.AutomationScreen
 import com.huanlab.engine.ui.screen.HomeScreen
 import com.huanlab.engine.ui.screen.MonitorScreen
 import com.huanlab.engine.ui.theme.HuanLabTheme
@@ -40,9 +42,11 @@ class MainActivity : ComponentActivity() {
             HuanLabTheme(dynamicColor = dynamicColor) {
                 val homeViewModel: HuanLabViewModel = viewModel()
                 val controlViewModel: AppControlViewModel = viewModel()
+                val automationViewModel: AutomationViewModel = viewModel()
                 YoeApp(
                     homeViewModel = homeViewModel,
                     controlViewModel = controlViewModel,
+                    automationViewModel = automationViewModel,
                     dynamicColor = dynamicColor,
                     dynamicColorSupported = supportsDynamicColor(),
                     onToggleDynamicColor = { enabled ->
@@ -59,6 +63,7 @@ class MainActivity : ComponentActivity() {
 private fun YoeApp(
     homeViewModel: HuanLabViewModel,
     controlViewModel: AppControlViewModel,
+    automationViewModel: AutomationViewModel,
     dynamicColor: Boolean,
     dynamicColorSupported: Boolean,
     onToggleDynamicColor: (Boolean) -> Unit,
@@ -66,26 +71,24 @@ private fun YoeApp(
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val homeState by homeViewModel.state.collectAsStateWithLifecycle()
     val controlState by controlViewModel.state.collectAsStateWithLifecycle()
+    val automationState by automationViewModel.state.collectAsStateWithLifecycle()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surfaceDim,
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = androidx.compose.ui.unit.Dp.Hairline,
+                tonalElevation = Dp.Hairline,
             ) {
-                listOf("首页" to "首", "管控" to "管", "监控" to "监").forEachIndexed { index, item ->
-                    NavigationBarItem(
-                        selected = tab == index,
-                        onClick = { tab = index },
-                        icon = {
-                            Text(item.second, style = MaterialTheme.typography.labelMedium)
-                        },
-                        label = {
-                            Text(item.first, style = MaterialTheme.typography.labelSmall)
-                        },
-                    )
-                }
+                listOf("首页" to "首", "管控" to "管", "自动" to "自", "监控" to "监")
+                    .forEachIndexed { index, item ->
+                        NavigationBarItem(
+                            selected = tab == index,
+                            onClick = { tab = index },
+                            icon = { Text(item.second, style = MaterialTheme.typography.labelMedium) },
+                            label = { Text(item.first, style = MaterialTheme.typography.labelSmall) },
+                        )
+                    }
             }
         },
     ) { innerPadding ->
@@ -111,6 +114,17 @@ private fun YoeApp(
                     onBulk = controlViewModel::applyBulk,
                     onRefresh = controlViewModel::refresh,
                     onClearMessage = controlViewModel::clearMessage,
+                    onRestoreAll = controlViewModel::restoreAll,
+                    onVerifyAll = controlViewModel::verifyAll,
+                )
+
+                2 -> AutomationScreen(
+                    state = automationState,
+                    apps = controlState.apps,
+                    onToggle = automationViewModel::setEnabled,
+                    onAddProfile = automationViewModel::upsertProfile,
+                    onRemoveProfile = automationViewModel::removeProfile,
+                    onClearLogs = automationViewModel::clearLogs,
                 )
 
                 else -> MonitorScreen(state = homeState)

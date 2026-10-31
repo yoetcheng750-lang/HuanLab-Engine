@@ -107,7 +107,7 @@ class AppControlViewModel(application: Application) : AndroidViewModel(applicati
                 when (outcome.state) {
                     AppLockState.LOCKED, AppLockState.UNLOCKED -> ok++
                     AppLockState.PENDING -> pending++
-                    AppLockState.FAILED -> failed++
+                    AppLockState.FAILED, AppLockState.DRIFTED, AppLockState.RESTORING -> failed++
                 }
                 applyOutcome(packageName, outcome.state, null)
             }
@@ -119,6 +119,50 @@ class AppControlViewModel(application: Application) : AndroidViewModel(applicati
                 )
             }
             refreshSilently()
+        }
+    }
+
+    fun restoreAll() {
+        if (_state.value.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true) }
+            val outcomes = manager.restoreAll()
+            val ok = outcomes.count { it.state == AppLockState.UNLOCKED }
+            val pending = outcomes.count { it.state == AppLockState.PENDING }
+            val failed = outcomes.size - ok - pending
+            _state.update {
+                it.copy(
+                    busy = false,
+                    lockedCount = manager.lockedCount(),
+                    message = "一键恢复：成功 $ok，等待 Shizuku $pending，失败 $failed",
+                )
+            }
+            refreshSilently()
+        }
+    }
+
+    fun verifyAll() {
+        if (_state.value.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true) }
+            val targets = _state.value.apps.filter { it.locked }
+            var drifted = 0
+            var pending = 0
+            for (app in targets) {
+                val state = manager.verify(app.packageName)
+                when (state) {
+                    AppLockState.DRIFTED -> drifted++
+                    AppLockState.PENDING -> pending++
+                    else -> Unit
+                }
+                applyOutcome(app.packageName, state, null)
+            }
+            _state.update {
+                it.copy(
+                    busy = false,
+                    message = "一致性检查：扫描 ${targets.size} 个，漂移 $drifted，待 Shizuku $pending",
+                )
+            }
         }
     }
 

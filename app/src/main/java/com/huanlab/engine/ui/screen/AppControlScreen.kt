@@ -53,6 +53,8 @@ fun AppControlScreen(
     onBulk: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onClearMessage: () -> Unit,
+    onRestoreAll: () -> Unit,
+    onVerifyAll: () -> Unit,
 ) {
     var pendingBulk by remember { mutableStateOf<Boolean?>(null) }
     val query = state.query.trim()
@@ -133,6 +135,14 @@ fun AppControlScreen(
             }
             ActionChip("取消全选", enabled = !state.busy && apps.isNotEmpty(), Modifier.weight(1f)) {
                 pendingBulk = false
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ActionChip("一致性检查", enabled = !state.busy && state.lockedCount > 0, Modifier.weight(1f)) {
+                onVerifyAll()
+            }
+            ActionChip("一键恢复", enabled = !state.busy && state.lockedCount > 0, Modifier.weight(1f)) {
+                onRestoreAll()
             }
         }
 
@@ -237,7 +247,8 @@ private fun AppRow(app: ManagedAppUi, enabled: Boolean, onToggle: (Boolean) -> U
     val stateColor = when (app.state) {
         AppLockState.LOCKED -> MaterialTheme.colorScheme.secondary
         AppLockState.PENDING -> MaterialTheme.colorScheme.tertiary
-        AppLockState.FAILED -> MaterialTheme.colorScheme.error
+        AppLockState.RESTORING -> MaterialTheme.colorScheme.primary
+        AppLockState.FAILED, AppLockState.DRIFTED -> MaterialTheme.colorScheme.error
         AppLockState.UNLOCKED -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Surface(
@@ -275,7 +286,9 @@ private fun AppRow(app: ManagedAppUi, enabled: Boolean, onToggle: (Boolean) -> U
                             when (app.state) {
                                 AppLockState.LOCKED -> "已锁定"
                                 AppLockState.PENDING -> "等待 Shizuku 恢复"
+                                AppLockState.RESTORING -> "正在恢复"
                                 AppLockState.FAILED -> "执行失败"
+                                AppLockState.DRIFTED -> "与系统状态不一致"
                                 AppLockState.UNLOCKED -> ""
                             },
                             style = MaterialTheme.typography.labelSmall,

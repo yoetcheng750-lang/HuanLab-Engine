@@ -45,6 +45,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.huanlab.engine.core.ShizukuPhase
+import com.huanlab.engine.service.MemorySnapshot
+import com.huanlab.engine.service.Metric
 import com.huanlab.engine.shared.ThermalLevel
 import com.huanlab.engine.ui.UiState
 import com.huanlab.engine.ui.components.YoeCard
@@ -52,6 +54,7 @@ import com.huanlab.engine.ui.components.YoeMetricBar
 import com.huanlab.engine.ui.components.YoeSectionTitle
 import com.huanlab.engine.ui.components.YoeStatusTile
 import com.huanlab.engine.ui.theme.YoeMotion
+import kotlin.math.abs
 
 @Composable
 fun HomeScreen(
@@ -210,14 +213,9 @@ private fun ShizukuCard(phase: ShizukuPhase, detail: String) {
 @Composable
 private fun StatusTiles(state: UiState) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        YoeStatusTile("热状态", thermalLabel(state.thermal), thermalColor(state.thermal), Modifier.weight(1f))
-        YoeStatusTile("CPU", "${state.cpuPercent.toInt()}%", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-        YoeStatusTile(
-            "内存",
-            if (state.memory.totalBytes > 0L) "${(state.memory.usedRatio * 100).toInt()}%" else "--",
-            MaterialTheme.colorScheme.tertiary,
-            Modifier.weight(1f),
-        )
+        YoeStatusTile("热状态", thermalText(state.thermal), thermalColorOf(state.thermal), Modifier.weight(1f))
+        YoeStatusTile("CPU", state.cpu.cpuPercentText(), MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+        YoeStatusTile("内存", state.memory.memPercentText(), MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
     }
 }
 
@@ -269,8 +267,8 @@ private fun RefreshRateCard(
     onPreview: (Float) -> Unit,
     onApply: (Float) -> Unit,
 ) {
-    var local by remember { mutableFloatStateOf(state.refreshRate) }
-    LaunchedEffect(state.refreshRate) { local = state.refreshRate }
+    var local by remember { mutableFloatStateOf(state.refreshRateTarget) }
+    LaunchedEffect(state.refreshRateTarget) { local = state.refreshRateTarget }
     val accent = MaterialTheme.colorScheme.primary
     YoeCard(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
         YoeSectionTitle("高刷调节", "settings put system peak_refresh_rate")
@@ -316,23 +314,47 @@ private fun RefreshRateCard(
 
 @Composable
 private fun LiveMetricsCard(state: UiState) {
-    val cpuTarget = state.cpuPercent / 100f
-    val memTarget = state.memory.usedRatio
+    val cpuMetric = state.cpu
+    val memMetric = state.memory
+    val cpuTarget = (cpuMetric.valueOrNull() ?: 0f) / 100f
+    val memTarget = (memMetric.valueOrNull()?.usedRatio ?: 0f) / 100f
     val cpuAnim by animateFloatAsState(targetValue = cpuTarget, animationSpec = YoeMotion.spatial(), label = "cpu")
     val memAnim by animateFloatAsState(targetValue = memTarget, animationSpec = YoeMotion.spatial(), label = "mem")
 
     YoeCard(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-        YoeSectionTitle("实时监控", "每 2 秒轮询 /proc/stat 与 /proc/meminfo")
+        YoeSectionTitle("实时监控", "跨调用采样窗口 · 每 2 秒刷新")
         Spacer(Modifier.height(14.dp))
-        YoeMetricBar("CPU 占用", cpuAnim, MaterialTheme.colorScheme.secondary)
+        when (cpuMetric) {
+            is Metric.Known -> YoeMetricBar("CPU 占用", cpuAnim, MaterialTheme.colorScheme.secondary)
+            is Metric.Unknown -> Text("CPU：不可用 · ${cpuMetric.reason}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Spacer(Modifier.height(14.dp))
-        YoeMetricBar("内存占用", memAnim, MaterialTheme.colorScheme.primary)
+        when (memMetric) {
+            is Metric.Known -> YoeMetricBar("内存占用", memAnim, MaterialTheme.colorScheme.primary)
+            is Metric.Unknown -> Text("内存：不可用 · ${memMetric.reason}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Spacer(Modifier.height(10.dp))
+        when (memMetric) {
+            is Metric.Known -> Text(
+                "MemTotal ${gb(memMetric.value.totalBytes)} · MemAvailable ${gb(memMetric.value.availableBytes)}",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            is Metric.Unknown -> Text(
+                memMetric.reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        val refresh = state.snapshot?.refreshRate
         Text(
-            if (state.memory.totalBytes > 0L) {
-                "MemTotal ${gb(state.memory.totalBytes)} · MemAvailable ${gb(state.memory.availableBytes)}"
-            } else {
-                "正在读取内存信息…"
+            buildString {
+                append("请求 ")
+                append(refresh?.requestedHz?.let { if (it is Metric.Known) "${it.value.toInt()}Hz" else "—" } ?: "—")
+                append(" · 实际 ")
+                append(refresh?.actualHz?.let { if (it is Metric.Known) "%.1fHz".format(it.value) else "—" } ?: "—")
             },
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
@@ -358,6 +380,26 @@ private fun EventLog(events: List<String>) {
             }
         }
     }
+}
+
+private fun Metric<Float>.cpuPercentText(): String = when (this) {
+    is Metric.Known -> "${value.toInt()}%"
+    is Metric.Unknown -> "—"
+}
+
+private fun Metric<MemorySnapshot>.memPercentText(): String = when (this) {
+    is Metric.Known -> "${value.usedRatio.toInt()}%"
+    is Metric.Unknown -> "—"
+}
+
+private fun thermalText(metric: Metric<ThermalLevel>): String = when (metric) {
+    is Metric.Known -> thermalLabel(metric.value)
+    is Metric.Unknown -> "—"
+}
+
+private fun thermalColorOf(metric: Metric<ThermalLevel>): Color = when (metric) {
+    is Metric.Known -> thermalColor(metric.value)
+    is Metric.Unknown -> Color(0xFF8E97AD)
 }
 
 private fun thermalLabel(level: ThermalLevel): String = when (level) {
