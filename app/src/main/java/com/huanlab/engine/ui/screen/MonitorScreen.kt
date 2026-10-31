@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -14,12 +15,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.huanlab.engine.service.MemorySnapshot
 import com.huanlab.engine.service.Metric
+import com.huanlab.engine.service.metrics.CpuFrequencySnapshot
+import com.huanlab.engine.service.metrics.ProbeStatus
+import com.huanlab.engine.service.metrics.SensorCategory
+import com.huanlab.engine.service.metrics.ThermalSnapshot
 import com.huanlab.engine.shared.ThermalLevel
 import com.huanlab.engine.ui.UiState
 import com.huanlab.engine.ui.components.YoeCard
@@ -121,6 +127,9 @@ fun MonitorScreen(state: UiState) {
             )
         }
 
+        CpuFrequencyCard(state.cpuFrequency)
+        ThermalSensorsCard(state.thermalSensors)
+
         YoeCard(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
             YoeSectionTitle("数据来源", "真实接口优先")
             Spacer(Modifier.height(8.dp))
@@ -137,6 +146,128 @@ fun MonitorScreen(state: UiState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun CpuFrequencyCard(snapshot: CpuFrequencySnapshot?) {
+    YoeCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        YoeSectionTitle(
+            "CPU 频率",
+            if (snapshot?.policies?.any { it.source.name == "SCALING_CUR_FREQ" } == true) {
+                "内核调频报告值（非硬件瞬时频率）"
+            } else {
+                "真实频率节点"
+            },
+        )
+        Spacer(Modifier.height(10.dp))
+        val policies = snapshot?.policies.orEmpty()
+        if (policies.isEmpty()) {
+            Text(
+                "—",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                snapshot?.reason ?: "尚未采样",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                policies.forEach { policy ->
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                policy.policyId + if (policy.affectedCpus.isNotEmpty()) {
+                                    " · cpu " + policy.affectedCpus.joinToString(",")
+                                } else {
+                                    ""
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                policy.source.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(
+                            policy.frequencyMhz?.let { "%.0f MHz".format(it) } ?: "—",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (policy.status == ProbeStatus.PASS) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        if (snapshot != null && snapshot.status != ProbeStatus.PASS) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                snapshot.reason ?: "部分 Policy 不可读",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThermalSensorsCard(snapshot: ThermalSnapshot?) {
+    YoeCard(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        YoeSectionTitle("设备温度", "来自真实传感器节点 / BatteryManager")
+        Spacer(Modifier.height(10.dp))
+        val sensors = snapshot?.sensors.orEmpty()
+        if (sensors.isEmpty()) {
+            Text("—", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(snapshot?.reason ?: "尚未采样", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                sensors.forEach { sensor ->
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                sensor.category.label + " · " + sensor.zoneId,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                sensor.rawType + " · " + sensor.source.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(
+                            sensor.temperatureCelsius?.let { "%.1f℃".format(it) } ?: "—",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (sensor.status == ProbeStatus.PASS) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    sensor.reason?.takeIf { sensor.status != ProbeStatus.PASS }?.let { reason ->
+                        Text(
+                            reason,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "CPU/GPU 温度依赖 /sys/class/thermal；被系统权限限制时显示「—」。SoC 与 CPU 不混用。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

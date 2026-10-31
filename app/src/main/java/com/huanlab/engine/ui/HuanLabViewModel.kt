@@ -11,6 +11,8 @@ import com.huanlab.engine.core.ShizukuUiState
 import com.huanlab.engine.service.DeviceSnapshot
 import com.huanlab.engine.service.EngineProvider
 import com.huanlab.engine.service.Metric
+import com.huanlab.engine.service.metrics.CpuFrequencySnapshot
+import com.huanlab.engine.service.metrics.ThermalSnapshot
 import com.huanlab.engine.service.sampling.SamplingCoordinator
 import com.huanlab.engine.service.sampling.SamplingCoordinatorProvider
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +28,8 @@ data class UiState(
     val shizuku: ShizukuUiState = ShizukuUiState(ShizukuPhase.UNKNOWN, "初始化中"),
     val snapshot: DeviceSnapshot? = null,
     val foreground: Metric<String> = Metric.Unknown("尚未采样"),
+    val cpuFrequency: CpuFrequencySnapshot? = null,
+    val thermalSensors: ThermalSnapshot? = null,
     val performanceEnabled: Boolean = false,
     val refreshRateTarget: Float = 120f,
     val busy: Boolean = false,
@@ -55,6 +59,8 @@ class HuanLabViewModel(application: Application) : AndroidViewModel(application)
                 it.copy(
                     snapshot = samplingState.snapshot,
                     foreground = samplingState.foreground,
+                    cpuFrequency = samplingState.cpuFrequency,
+                    thermalSensors = samplingState.thermalSensors,
                 )
             }
         }

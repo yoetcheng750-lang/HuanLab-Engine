@@ -52,7 +52,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="performance_overlay" />
+                android:value="performance_overlay: user-visible performance monitoring overlay started by the user" />
         </service>
 
         <provider

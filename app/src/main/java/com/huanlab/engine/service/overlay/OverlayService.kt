@@ -17,6 +17,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.huanlab.engine.service.sampling.SamplingCoordinator
@@ -177,15 +178,12 @@ class OverlayService : Service() {
             manager.createNotificationChannel(channel)
         }
         val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            0
         }
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
     }
 
     private fun buildNotification(): Notification {
@@ -215,7 +213,7 @@ class OverlayService : Service() {
         }
         composeView = null
         runCatching { owner.destroy() }
-        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        runCatching { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE) }
         stopSelf()
     }
 

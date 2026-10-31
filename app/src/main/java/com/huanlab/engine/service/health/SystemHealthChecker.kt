@@ -1,6 +1,8 @@
 package com.huanlab.engine.service.health
 
 import android.app.AppOpsManager
+import android.content.ComponentName
+import android.content.pm.ServiceInfo
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -172,15 +174,54 @@ class SystemHealthChecker(private val context: Context) {
             )
         }
 
-        val fgsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-        items += HealthItem(
-            "api.fgs",
-            "前台服务类型要求",
-            if (fgsSupported) HealthState.DEGRADED else HealthState.UNSUPPORTED,
-            if (fgsSupported) "Android 14+：悬浮窗服务需声明 specialUse 类型" else "无需声明特殊前台服务类型",
-            "Build.VERSION.SDK_INT",
-        )
+        items += checkForegroundService()
         return items
+    }
+
+    /**
+     * 前台服务真实检查：读取合并后的 ServiceInfo.foregroundServiceType + 权限授予状态，
+     * 不再用「API >= 34 就一律 DEGRADED」的伪判断。
+     */
+    fun checkForegroundService(): HealthItem {
+        val component = ComponentName(context, OVERLAY_SERVICE_CLASS)
+        val info = runCatching { context.packageManager.getServiceInfo(component, 0) }.getOrNull()
+            ?: return HealthItem(
+                "api.fgs",
+                "前台服务声明",
+                HealthState.FAILED,
+                "Manifest 中未找到 $OVERLAY_SERVICE_CLASS",
+                "PackageManager.getServiceInfo",
+            )
+
+        val permissionGranted = context.checkSelfPermission(
+            "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return HealthItem(
+                "api.fgs",
+                "前台服务声明",
+                if (permissionGranted) HealthState.PASS else HealthState.DEGRADED,
+                "当前系统无需 specialUse 类型；服务已声明，权限${if (permissionGranted) "已授予" else "未授予"}",
+                "PackageManager.getServiceInfo",
+            )
+        }
+
+        val hasSpecialUse = (info.foregroundServiceType and
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) != 0
+        val state = when {
+            hasSpecialUse && permissionGranted -> HealthState.PASS
+            hasSpecialUse && !permissionGranted -> HealthState.DEGRADED
+            else -> HealthState.FAILED
+        }
+        return HealthItem(
+            "api.fgs",
+            "前台服务声明",
+            state,
+            "foregroundServiceType=${info.foregroundServiceType}，SPECIAL_USE=${hasSpecialUse}，" +
+                "权限=${if (permissionGranted) "已授予" else "未授予"}",
+            "PackageManager.getServiceInfo + checkSelfPermission",
+        )
     }
 
     private fun thermalName(status: Int?): String = when (status) {
@@ -198,5 +239,6 @@ class SystemHealthChecker(private val context: Context) {
         const val EXPECTED_APP_ID = "com.huanlab.engine"
         const val CORE_BASELINE_ASSET = "core_baseline.sha256"
         const val EXPECTED_CORE_COUNT = 25
+        const val OVERLAY_SERVICE_CLASS = "com.huanlab.engine.service.overlay.OverlayService"
     }
 }
