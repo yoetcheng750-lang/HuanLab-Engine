@@ -22,7 +22,8 @@ class SurfaceFlingerParserTest {
         }
         val timestamps = SurfaceFlingerParser.parsePresentTimestamps(output)
         assertEquals(11, timestamps.size)
-        val result = SurfaceFlingerParser.computeFps(timestamps, startNs, endNs)
+        // 窗口必须覆盖整个 166.7ms 数据跨度，否则帧会被正确过滤掉
+        val result = SurfaceFlingerParser.computeFps(timestamps, startNs, startNs + 300_000_000L)
         assertEquals(11, result.validFrames)
         val fps = result.fps ?: error("expected fps")
         assertTrue("fps=$fps", fps in 58f..62f)
