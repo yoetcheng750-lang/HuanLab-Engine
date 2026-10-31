@@ -8,10 +8,11 @@ import com.huanlab.engine.core.Engine
 import com.huanlab.engine.core.ExecutionReport
 import com.huanlab.engine.core.ShizukuPhase
 import com.huanlab.engine.core.ShizukuUiState
-import com.huanlab.engine.service.DeviceMonitor
 import com.huanlab.engine.service.DeviceSnapshot
 import com.huanlab.engine.service.EngineProvider
 import com.huanlab.engine.service.Metric
+import com.huanlab.engine.service.sampling.SamplingCoordinator
+import com.huanlab.engine.service.sampling.SamplingCoordinatorProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,7 @@ import kotlinx.coroutines.withContext
 data class UiState(
     val shizuku: ShizukuUiState = ShizukuUiState(ShizukuPhase.UNKNOWN, "初始化中"),
     val snapshot: DeviceSnapshot? = null,
+    val foreground: Metric<String> = Metric.Unknown("尚未采样"),
     val performanceEnabled: Boolean = false,
     val refreshRateTarget: Float = 120f,
     val busy: Boolean = false,
@@ -37,22 +39,24 @@ data class UiState(
 class HuanLabViewModel(application: Application) : AndroidViewModel(application) {
 
     private val engine: Engine = EngineProvider.get(application)
-    private val monitor = DeviceMonitor(application)
+    private val sampling: SamplingCoordinator = SamplingCoordinatorProvider.get(application)
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
-        viewModelScope.launch { pollLoop() }
+        sampling.acquire()
+        viewModelScope.launch { observeLoop() }
     }
 
-    private suspend fun pollLoop() {
-        while (true) {
-            val result = withContext(Dispatchers.IO) {
-                monitor.sample() to engine.shizukuState()
+    private suspend fun observeLoop() {
+        sampling.state.collect { samplingState ->
+            _state.update {
+                it.copy(
+                    snapshot = samplingState.snapshot,
+                    foreground = samplingState.foreground,
+                )
             }
-            _state.update { it.copy(snapshot = result.first, shizuku = result.second) }
-            delay(POLL_INTERVAL_MS)
         }
     }
 
@@ -126,11 +130,9 @@ class HuanLabViewModel(application: Application) : AndroidViewModel(application)
     }
 
     override fun onCleared() {
-        // Engine 为应用级共享实例，由进程生命周期管理。
+        // 采样协调器是应用级共享实例，这里只释放引用计数。
+        sampling.release()
         super.onCleared()
     }
 
-    private companion object {
-        const val POLL_INTERVAL_MS = 2_000L
-    }
 }

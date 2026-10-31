@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.huanlab.engine.ui.screen.AppControlScreen
 import com.huanlab.engine.ui.screen.AutomationScreen
+import com.huanlab.engine.ui.screen.HealthScreen
 import com.huanlab.engine.ui.screen.HomeScreen
 import com.huanlab.engine.ui.screen.MonitorScreen
 import com.huanlab.engine.ui.theme.HuanLabTheme
@@ -43,10 +44,12 @@ class MainActivity : ComponentActivity() {
                 val homeViewModel: HuanLabViewModel = viewModel()
                 val controlViewModel: AppControlViewModel = viewModel()
                 val automationViewModel: AutomationViewModel = viewModel()
+                val healthViewModel: HealthViewModel = viewModel()
                 YoeApp(
                     homeViewModel = homeViewModel,
                     controlViewModel = controlViewModel,
                     automationViewModel = automationViewModel,
+                    healthViewModel = healthViewModel,
                     dynamicColor = dynamicColor,
                     dynamicColorSupported = supportsDynamicColor(),
                     onToggleDynamicColor = { enabled ->
@@ -64,14 +67,18 @@ private fun YoeApp(
     homeViewModel: HuanLabViewModel,
     controlViewModel: AppControlViewModel,
     automationViewModel: AutomationViewModel,
+    healthViewModel: HealthViewModel,
     dynamicColor: Boolean,
     dynamicColorSupported: Boolean,
     onToggleDynamicColor: (Boolean) -> Unit,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val homeState by homeViewModel.state.collectAsStateWithLifecycle()
     val controlState by controlViewModel.state.collectAsStateWithLifecycle()
     val automationState by automationViewModel.state.collectAsStateWithLifecycle()
+    val healthState by healthViewModel.state.collectAsStateWithLifecycle()
+    val overlayRunning by healthViewModel.overlayRunning.collectAsStateWithLifecycle()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surfaceDim,
@@ -80,7 +87,7 @@ private fun YoeApp(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 tonalElevation = Dp.Hairline,
             ) {
-                listOf("首页" to "首", "管控" to "管", "自动" to "自", "监控" to "监")
+                listOf("首页" to "首", "管控" to "管", "自动" to "自", "监控" to "监", "自检" to "检")
                     .forEachIndexed { index, item ->
                         NavigationBarItem(
                             selected = tab == index,
@@ -127,7 +134,24 @@ private fun YoeApp(
                     onClearLogs = automationViewModel::clearLogs,
                 )
 
-                else -> MonitorScreen(state = homeState)
+                3 -> MonitorScreen(state = homeState)
+
+                else -> HealthScreen(
+                    summary = healthState,
+                    overlayRunning = overlayRunning,
+                    canDrawOverlays = healthViewModel.canDrawOverlays(),
+                    onRefresh = healthViewModel::refresh,
+                    onExport = healthViewModel::export,
+                    onStartOverlay = { healthViewModel.startOverlay() },
+                    onStopOverlay = { healthViewModel.stopOverlay() },
+                    onRequestOverlayPermission = {
+                        val intent = android.content.Intent(
+                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:" + context.packageName),
+                        )
+                        runCatching { context.startActivity(intent) }
+                    },
+                )
             }
         }
     }
